@@ -57,10 +57,7 @@ module CloudWatchLogger
                 event = {
                   log_group_name: @log_group_name,
                   log_stream_name: @log_stream_name,
-                  log_events: [{
-                    timestamp: message_object[:epoch_time],
-                    message:   message_object[:message]
-                  }]
+                  log_events: [log_event(message_object)]
                 }
                 event[:sequence_token] = @sequence_token if @sequence_token
                 response = @client.put_log_events(event)
@@ -94,8 +91,9 @@ module CloudWatchLogger
 
         def connect!(opts = {})
           args = { http_open_timeout: opts[:open_timeout], http_read_timeout: opts[:read_timeout] }
+          args[:logger] = @opts[:logger] if @opts[:logger]
           args[:region] = @opts[:region] if @opts[:region]
-          args.merge( @credentials.key?(:access_key_id) ? { access_key_id: @credentials[:access_key_id], secret_access_key: @credentials[:secret_access_key] } : {} )
+          args.merge!( @credentials.key?(:access_key_id) ? { access_key_id: @credentials[:access_key_id], secret_access_key: @credentials[:secret_access_key] } : {} )
 
           @client = Aws::CloudWatchLogs::Client.new(args)
           begin
@@ -108,9 +106,21 @@ module CloudWatchLogger
               log_group_name: @log_group_name
             )
             retry
-          rescue Aws::CloudWatchLogs::Errors::ResourceAlreadyExistsException, 
+          rescue Aws::CloudWatchLogs::Errors::ResourceAlreadyExistsException,
             Aws::CloudWatchLogs::Errors::AccessDeniedException
           end
+        end
+
+        def log_event(message_object)
+          timestamp = (Time.now.utc.to_f.round(3) * 1000).to_i
+          message = message_object
+
+          if message_object.is_a?(Hash) && %i[epoch_time message].all?{ |s| message_object.key?(s) }
+            timestamp = message_object[:epoch_time]
+            message = message_object[:message]
+          end
+
+          { timestamp: timestamp, message: message }
         end
       end
     end
